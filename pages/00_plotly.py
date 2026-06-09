@@ -12,11 +12,10 @@ st.set_page_config(
 )
 
 st.title("📈 글로벌 시가총액 TOP 10 주식 대시보드")
-st.markdown("야후 파이낸스(yfinance) 데이터와 Plotly를 활용한 최근 1년 주가 변화 추적 대시보드입니다.")
+st.markdown("야후 파이낸스(yfinance) 데이터를 활용한 주가 변화 및 투자 정보 대시보드입니다.")
 st.markdown("---")
 
-# 2. 글로벌 TOP 10 주식 데이터 정의 (티커 및 기업명)
-# * 시가총액 순위는 시장 상황에 따라 변동될 수 있습니다.
+# 2. 글로벌 TOP 10 주식 데이터 정의
 TOP10_STOCKS = {
     "MSFT": "Microsoft",
     "AAPL": "Apple",
@@ -30,91 +29,119 @@ TOP10_STOCKS = {
     "TSLA": "Tesla"
 }
 
-# 3. 사이드바 - 사용자 입력 받아오기
-st.sidebar.header("⚙️ 설정 변경")
+# 3. 사이드바 - 기본 설정
+st.sidebar.header("⚙️ 전체 설정")
 selected_tickers = st.sidebar.multiselect(
-    "조회할 기업을 선택하세요 (기본 전체)",
+    "메인 차트에 표시할 기업들을 선택하세요",
     options=list(TOP10_STOCKS.keys()),
     default=list(TOP10_STOCKS.keys()),
     format_func=lambda x: f"{TOP10_STOCKS[x]} ({x})"
 )
 
-# 날짜 계산 (최근 1년)
+# 데이터 로드 (최근 1년치 기본)
 end_date = datetime.today()
 start_date = end_date - timedelta(days=365)
 
-# 4. 데이터 로드 함수 (캐싱 처리로 속도 향상)
-@st.cache_data(ttl=3600)  # 1시간 동안 캐시 유지
+@st.cache_data(ttl=3600)
 def load_stock_data(tickers):
     if not tickers:
         return pd.DataFrame()
-    
-    # 데이터 다운로드
     data = tf.download(tickers, start=start_date, end=end_date)
-    
-    # 단일 티커일 경우 컬럼 구조가 다를 수 있어 예외 처리
     if len(tickers) == 1:
         df = data['Close'].to_frame()
         df.columns = tickers
     else:
-        # MultiIndex 컬럼에서 'Close' 가격만 추출
         df = data['Close']
     return df
 
-# 데이터 가져오기
-with st.spinner('야후 파이낸스에서 데이터를 불러오는 중입니다...'):
+with st.spinner('데이터를 불러오는 중입니다...'):
     df_close = load_stock_data(selected_tickers)
 
-# 5. 메인 화면 시각화
+# --- 메인 화면: 1년 비교 차트 ---
 if df_close.empty:
-    st.warning("⚠️ 선택된 기업이 없거나 데이터를 불러올 수 없습니다. 사이드바에서 기업을 선택해 주세요.")
+    st.warning("⚠️ 사이드바에서 기업을 선택해 주세요.")
 else:
-    # 5-1. 수익률 비교 차트 (누적 수익률 % 계산)
     st.subheader("📊 최근 1년 누적 수익률 (%) 비교")
-    st.caption("시작일 기준 주가를 100으로 맞추어 어느 주식이 가장 많이 올랐는지 비교합니다.")
-    
-    # 누적 수익률 계산: (현재가격 / 시작가격 - 1) * 100
     df_return = (df_close / df_close.iloc[0] - 1) * 100
     
     fig_return = go.Figure()
     for ticker in df_return.columns:
         fig_return.add_trace(go.Scatter(
-            x=df_return.index, 
-            y=df_return[ticker], 
-            mode='lines', 
-            name=f"{TOP10_STOCKS[ticker]} ({ticker})"
+            x=df_return.index, y=df_return[ticker], mode='lines', name=f"{TOP10_STOCKS[ticker]}"
         ))
-        
-    fig_return.update_layout(
-        xaxis_title="날짜",
-        yaxis_title="수익률 (%)",
-        hovermode="x unified",
-        template="plotly_white",
-        height=500
-    )
+    fig_return.update_layout(xaxis_title="날짜", yaxis_title="수익률 (%)", hovermode="x unified", template="plotly_white", height=400)
     st.plotly_chart(fig_return, use_container_width=True)
+
+st.markdown("---")
+
+# --- 🔥 핵심 추가 기능: 특정 회사 1달 투자 자료 상세 보기 ---
+st.subheader("🔍 기업별 최근 1달 투자 자료 상세보기")
+st.markdown("자세히 보고 싶은 기업을 선택하면 **최근 1달 주가(캔들차트), 거래량, 뉴스**를 보여줍니다.")
+
+# 유저가 집중 분석할 기업 1개 선택
+detail_ticker = st.selectbox(
+    "분석할 기업을 선택하세요:",
+    options=list(TOP10_STOCKS.keys()),
+    format_func=lambda x: f"{TOP10_STOCKS[x]} ({x})"
+)
+
+if detail_ticker:
+    # yfinance Ticker 객체 생성 (뉴스 및 세부 데이터 추출용)
+    ticker_obj = tf.Ticker(detail_ticker)
     
-    st.markdown("---")
+    # 최근 1달 데이터만 따로 가져오기
+    one_month_ago = end_date - timedelta(days=30)
+    df_month = ticker_obj.history(start=one_month_ago, end=end_date)
     
-    # 5-2. 개별 주가 및 요약 정보 개츠(Metric) 표시
-    st.subheader("🏢 기업별 상세 요약 (최근 영업일 기준)")
-    
-    # 3열 레이아웃으로 메트릭 배치
-    cols = st.columns(3)
-    
-    for i, ticker in enumerate(selected_tickers):
-        if ticker in df_close.columns:
-            series = df_close[ticker].dropna()
-            if len(series) >= 2:
-                current_val = series.iloc[-1]
-                prev_val = series.iloc[-2]
-                delta_val = current_val - prev_val
-                delta_pct = (delta_val / prev_val) * 100
-                
-                # 3개 열에 순차적으로 분배
-                with cols[i % 3]:
-                    st.metric(
-                        label=f"{TOP10_STOCKS[ticker]} ({ticker})",
-                        value=f"${current_val:,.2f}",
-                        delta=f"${delta_val:,.2f} ({delta_pct:+.2f}%)"
-                    )
+    if not df_month.empty:
+        # 레이아웃 분할: 왼쪽은 차트, 오른쪽은 뉴스
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown(### f"📈 {TOP10_STOCKS[detail_ticker]} 최근 1달 주가 변동")
+            
+            # 주식 거래용 캔들차트 그리기
+            fig_candle = go.Figure()
+            fig_candle.add_trace(go.Candlestick(
+                x=df_month.index,
+                open=df_month['Open'],
+                high=df_month['High'],
+                low=df_month['Low'],
+                close=df_month['Close'],
+                name="주가"
+            ))
+            fig_candle.update_layout(
+                template="plotly_white",
+                xaxis_rangeslider_visible=False,
+                height=350,
+                margin=dict(l=20, r=20, t=20, b=20)
+            )
+            st.plotly_chart(fig_candle, use_container_width=True)
+            
+            # 거래량 차트 추가
+            fig_vol = go.Figure()
+            fig_vol.add_trace(go.Bar(x=df_month.index, y=df_month['Volume'], name='거래량', marker_color='orange'))
+            fig_vol.update_layout(template="plotly_white", height=150, margin=dict(l=20, r=20, t=10, b=20))
+            st.plotly_chart(fig_vol, use_container_width=True)
+            
+        with col2:
+            st.markdown(### f"📰 {TOP10_STOCKS[detail_ticker]} 관련 최신 뉴스")
+            
+            # yfinance가 무료로 제공하는 최신 뉴스 긁어오기
+            news_list = ticker_obj.news
+            
+            if news_list:
+                # 최대 5개까지만 노출
+                for news in news_list[:5]:
+                    title = news.get('title', '제목 없음')
+                    link = news.get('link', '#')
+                    publisher = news.get('publisher', '알 수 없음')
+                    
+                    # 🔴 뉴스 시각화 디자인 수정: 2026년 야후 파이낸스 뉴스 구조에 맞춤 복구
+                    st.markdown(f"**[{title}]({link})**")
+                    st.caption(f"출처: {publisher}")
+                    st.markdown("---")
+            else:
+                st.info("현재 가져올 수 있는 최신 뉴스가 없습니다.")
+    else:
+        st.error("데이터를 불러오지 못했습니다. 티커를 확인해 주세요.")
