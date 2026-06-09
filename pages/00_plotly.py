@@ -86,7 +86,6 @@ detail_ticker = st.selectbox(
 )
 
 if detail_ticker:
-    # yfinance Ticker 객체 생성 (뉴스 및 세부 데이터 추출용)
     ticker_obj = yf.Ticker(detail_ticker)
     
     # 최근 1달 데이터만 따로 가져오기
@@ -94,13 +93,11 @@ if detail_ticker:
     df_month = ticker_obj.history(start=one_month_ago, end=end_date)
     
     if not df_month.empty:
-        # 레이아웃 분할: 왼쪽은 차트, 오른쪽은 뉴스
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.markdown(f"### 📈 {TOP10_STOCKS[detail_ticker]} 최근 1달 주가 변동")
             
-            # 주식 거래용 캔들차트 그리기
             fig_candle = go.Figure()
             fig_candle.add_trace(go.Candlestick(
                 x=df_month.index,
@@ -118,7 +115,6 @@ if detail_ticker:
             )
             st.plotly_chart(fig_candle, use_container_width=True)
             
-            # 거래량 차트 추가
             fig_vol = go.Figure()
             fig_vol.add_trace(go.Bar(x=df_month.index, y=df_month['Volume'], name='거래량', marker_color='orange'))
             fig_vol.update_layout(template="plotly_white", height=150, margin=dict(l=20, r=20, t=10, b=20))
@@ -127,19 +123,38 @@ if detail_ticker:
         with col2:
             st.markdown(f"### 📰 {TOP10_STOCKS[detail_ticker]} 관련 최신 뉴스")
             
-            # yfinance가 무료로 제공하는 최신 뉴스 긁어오기
-            news_list = ticker_obj.news
-            
-            if news_list:
-                for news in news_list[:5]:
-                    title = news.get('title', '제목 없음')
-                    link = news.get('link', '#')
-                    publisher = news.get('publisher', '알 수 없음')
+            # 🔴 뉴스 로직 강화 및 구조 변경 대응
+            try:
+                news_list = ticker_obj.news
+            except Exception:
+                news_list = []
+                
+            if news_list and isinstance(news_list, list):
+                valid_news_count = 0
+                for news in news_list:
+                    if valid_news_count >= 5:  # 최대 5개까지만 노출
+                        break
+                        
+                    # 야후 파이낸스 변경된 데이터 구조 대응 (content 내부에 들어있는 경우 존재)
+                    content = news.get('content', {}) if isinstance(news.get('content'), dict) else news
                     
-                    st.markdown(f"**[{title}]({link})**")
-                    st.caption(f"출처: {publisher}")
-                    st.markdown("---")
+                    title = content.get('title') or news.get('title')
+                    link = content.get('clickThroughUrl') or content.get('link') or news.get('link')
+                    publisher = content.get('provider', {}).get('displayName') or content.get('publisher') or news.get('publisher') or "Yahoo Finance"
+                    
+                    # 제목이 제대로 있을 때만 화면에 출력
+                    if title:
+                        st.markdown(f"**[{title}]({link})**")
+                        st.caption(f"출처: {publisher}")
+                        st.markdown("---")
+                        valid_news_count += 1
+                
+                if valid_news_count == 0:
+                    st.info("현재 가져올 수 있는 뉴스 형식이 변경되었습니다. 대신 아래 링크를 확인해 보세요.")
+                    st.markdown(f"[야후 파이낸스에서 {detail_ticker} 뉴스 직접 보기](https://finance.yahoo.com/quote/{detail_ticker}/news)")
             else:
-                st.info("현재 가져올 수 있는 최신 뉴스가 없습니다.")
+                # 뉴스 수집이 완전히 막혔을 때를 위한 안전장치 링크 제공
+                st.info("야후 파이낸스 뉴스 피드를 일시적으로 불러올 수 없습니다.")
+                st.markdown(f"🔗 [여기 클릭해서 야후 파이낸스 실시간 뉴스 보기](https://finance.yahoo.com/quote/{detail_ticker}/news)")
     else:
         st.error("데이터를 불러오지 못했습니다. 티커를 확인해 주세요.")
