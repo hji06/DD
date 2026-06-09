@@ -1,5 +1,5 @@
 import streamlit as st
-import yfinance as tf
+import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -46,7 +46,7 @@ start_date = end_date - timedelta(days=365)
 def load_stock_data(tickers):
     if not tickers:
         return pd.DataFrame()
-    data = tf.download(tickers, start=start_date, end=end_date)
+    data = yf.download(tickers, start=start_date, end=end_date)
     if len(tickers) == 1:
         df = data['Close'].to_frame()
         df.columns = tickers
@@ -74,7 +74,7 @@ else:
 
 st.markdown("---")
 
-# --- 🔥 핵심 추가 기능: 특정 회사 1달 투자 자료 상세 보기 ---
+# --- 핵심 기능: 특정 회사 1달 투자 자료 상세 보기 ---
 st.subheader("🔍 기업별 최근 1달 투자 자료 상세보기")
 st.markdown("자세히 보고 싶은 기업을 선택하면 **최근 1달 주가(캔들차트), 거래량, 뉴스**를 보여줍니다.")
 
@@ -87,7 +87,7 @@ detail_ticker = st.selectbox(
 
 if detail_ticker:
     # yfinance Ticker 객체 생성 (뉴스 및 세부 데이터 추출용)
-    ticker_obj = tf.Ticker(detail_ticker)
+    ticker_obj = yf.Ticker(detail_ticker)
     
     # 최근 1달 데이터만 따로 가져오기
     one_month_ago = end_date - timedelta(days=30)
@@ -98,7 +98,7 @@ if detail_ticker:
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.markdown(### f"📈 {TOP10_STOCKS[detail_ticker]} 최근 1달 주가 변동")
+            st.markdown(f"### 📈 {TOP10_STOCKS[detail_ticker]} 최근 1달 주가 변동")
             
             # 주식 거래용 캔들차트 그리기
             fig_candle = go.Figure()
@@ -125,19 +125,17 @@ if detail_ticker:
             st.plotly_chart(fig_vol, use_container_width=True)
             
         with col2:
-            st.markdown(### f"📰 {TOP10_STOCKS[detail_ticker]} 관련 최신 뉴스")
+            st.markdown(f"### 📰 {TOP10_STOCKS[detail_ticker]} 관련 최신 뉴스")
             
             # yfinance가 무료로 제공하는 최신 뉴스 긁어오기
             news_list = ticker_obj.news
             
             if news_list:
-                # 최대 5개까지만 노출
                 for news in news_list[:5]:
                     title = news.get('title', '제목 없음')
                     link = news.get('link', '#')
                     publisher = news.get('publisher', '알 수 없음')
                     
-                    # 🔴 뉴스 시각화 디자인 수정: 2026년 야후 파이낸스 뉴스 구조에 맞춤 복구
                     st.markdown(f"**[{title}]({link})**")
                     st.caption(f"출처: {publisher}")
                     st.markdown("---")
